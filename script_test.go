@@ -1189,8 +1189,11 @@ func TestExecRunsGoWithNoArgsAndGetsUsageMessagePlusErrorExitStatus2(t *testing.
 	// We can't make many cross-platform assumptions about what external
 	// commands will be available, but it seems logical that 'go' would be
 	// (though it may not be in the user's path)
-	p := script.Exec("go")
-	output, err := p.String()
+	buf := new(bytes.Buffer)
+	p := script.NewPipe().WithStderr(buf).Exec("go")
+	_, err := p.String()
+	data, _ := io.ReadAll(buf)
+	output := string(data)
 	if err == nil {
 		t.Fatal("want error when command returns a non-zero exit status")
 	}
@@ -1233,7 +1236,7 @@ func TestFileOutputsContentsOfSpecifiedFile(t *testing.T) {
 
 func TestFileErrorsOnNonexistentFile(t *testing.T) {
 	t.Parallel()
-	p := script.File("doesntexist")
+	p := script.File("doesntexist").Wait() // Since File is now concurrently we need to wait for any error
 	if p.Error() == nil {
 		t.Error("want error for non-existent file")
 	}
@@ -1277,7 +1280,7 @@ func TestFindFiles_RecursesIntoSubdirectories(t *testing.T) {
 
 func TestFindFiles_InNonexistentPathReturnsError(t *testing.T) {
 	t.Parallel()
-	p := script.FindFiles("nonexistent_path")
+	p := script.FindFiles("nonexistent_path").Wait()
 	if p.Error() == nil {
 		t.Fatal("want error for nonexistent path")
 	}
@@ -1291,6 +1294,7 @@ func TestIfExists_ProducesErrorPlusNoOutputForNonexistentFile(t *testing.T) {
 		t.Fatal("want error")
 	}
 	if want != got {
+		// With Unix pipelines echo would output regardless if the previous command failed
 		t.Error(cmp.Diff(want, got))
 	}
 }
@@ -1321,7 +1325,7 @@ func TestListFiles_OutputsDirectoryContentsGivenDirectoryPath(t *testing.T) {
 
 func TestListFiles_ErrorsOnNonexistentPath(t *testing.T) {
 	t.Parallel()
-	p := script.ListFiles("nonexistentpath")
+	p := script.ListFiles("nonexistentpath").Wait()
 	if p.Error() == nil {
 		t.Error("want error status on listing non-existent path, but got nil")
 	}
@@ -1666,6 +1670,10 @@ func TestWriteFile_WritesInputToFileCreatingItIfNecessary(t *testing.T) {
 type partialErrReader struct{}
 
 func (r partialErrReader) Read(p []byte) (int, error) {
+	if len(p) == 0 {
+		return 0, errors.New("buffer is zero-length")
+	}
+	p[0] = 'a' // Writing an actual byte
 	return 1, errors.New("oh no")
 }
 
@@ -1885,6 +1893,7 @@ func ExampleExec_exit_status_zero() {
 }
 
 func ExampleExec_exit_status_not_zero() {
+	// This seems to not work on Windows
 	p := script.Exec("false")
 	p.Wait()
 	fmt.Println(p.ExitStatus())
@@ -1915,6 +1924,7 @@ func ExampleIfExists_true() {
 }
 
 func ExampleIfExists_false() {
+	// With Unix pipelines echo would output regardless if the previous command failed
 	script.IfExists("doesntexist").Echo("found it").Stdout()
 	// Output:
 	//
