@@ -333,10 +333,11 @@ func Exec(name string, arg ...string) pipeline.ProcessE {
 		cmd.Stdin = r
 		cmd.Stdout = w
 		cmd.Stderr = e
-		err := cmd.Start()
-		if err != nil {
-			fmt.Fprintln(cmd.Stderr, err)
-			return err
+		if err := cmd.Start(); err != nil {
+			return &pipeline.ExitError{
+				Code:    1,
+				Message: err.Error(),
+			}
 		}
 		return cmd.Wait()
 	}

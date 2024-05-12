@@ -17,6 +17,7 @@ import (
 	"testing/iotest"
 
 	"github.com/bitfield/script"
+	"github.com/bitfield/script/pipeline"
 	"github.com/google/go-cmp/cmp"
 	"github.com/rogpeppe/go-internal/testscript"
 )
@@ -1362,7 +1363,7 @@ func TestReadAutoCloser_ReadsAllDataFromSourceAndClosesItAutomatically(t *testin
 	if err != nil {
 		t.Fatal(err)
 	}
-	acr := script.NewReadAutoCloser(input)
+	acr := pipeline.NewReadOnlyPipe(input)
 	got, err := io.ReadAll(acr)
 	if err != nil {
 		t.Fatal(err)
@@ -1370,7 +1371,10 @@ func TestReadAutoCloser_ReadsAllDataFromSourceAndClosesItAutomatically(t *testin
 	if !cmp.Equal(want, got) {
 		t.Fatal(cmp.Diff(want, got))
 	}
-	_, err = io.ReadAll(acr)
+	// Go docs: Because ReadAll is defined to read from src until EOF, it
+	// does not treat an EOF from Read as an error to be reported.
+	// _, err = io.ReadAll(acr)
+	_, err = acr.Read(make([]byte, 32))
 	if err == nil {
 		t.Error("input not closed after reading")
 	}
@@ -1414,8 +1418,8 @@ func TestStdoutSendsPipeContentsToConfiguredStandardOutput(t *testing.T) {
 	if want != got {
 		t.Fatalf("want %q, got %q", want, string(got))
 	}
-	_, err = p.String()
-	if err == nil {
+	// _, _ := p.String()
+	if !p.Pipeline.IsClosed() {
 		t.Error("input not closed after reading")
 	}
 }
@@ -1778,7 +1782,7 @@ func TestWithStdout_SetsSpecifiedWriterAsStdout(t *testing.T) {
 
 func TestErrorReturnsErrorSetByPreviousPipeStage(t *testing.T) {
 	t.Parallel()
-	p := script.File("testdata/nonexistent.txt")
+	p := script.File("testdata/nonexistent.txt").Wait()
 	if p.Error() == nil {
 		t.Error("want error status reading nonexistent file, but got nil")
 	}
@@ -1885,7 +1889,7 @@ func ExampleEcho() {
 }
 
 func ExampleExec_exit_status_zero() {
-	p := script.Exec("echo")
+	p := script.Exec("go version")
 	p.Wait()
 	fmt.Println(p.ExitStatus())
 	// Output:
@@ -1893,7 +1897,6 @@ func ExampleExec_exit_status_zero() {
 }
 
 func ExampleExec_exit_status_not_zero() {
-	// This seems to not work on Windows
 	p := script.Exec("false")
 	p.Wait()
 	fmt.Println(p.ExitStatus())

@@ -1,6 +1,7 @@
 package script
 
 import (
+	"fmt"
 	"io"
 	"net/http"
 	"os"
@@ -12,8 +13,6 @@ import (
 	"github.com/bitfield/script/shell"
 	"github.com/bitfield/script/std"
 )
-
-// type Pipe Pipeline
 
 type Pipe struct {
 	*pipeline.Pipeline
@@ -48,6 +47,15 @@ func (p *Pipe) Filter(prog pipeline.Process) *Pipe {
 // For backwards compatibility
 func (p *Pipe) FilterScan(filter func(string, io.Writer)) *Pipe {
 	return p.Scanner(filter)
+}
+
+func (p *Pipe) Stdout() (int, error) {
+	n64, err := p.Pipeline.Run()
+	n := int(n64)
+	if int64(n) != n64 {
+		return 0, fmt.Errorf("length %d overflows int", n64)
+	}
+	return n, err
 }
 
 func (p *Pipe) Wait() *Pipe {
@@ -94,7 +102,9 @@ func Get(url string) *Pipe {
 
 // IfExists creates a pipeline if the file exists
 func IfExists(path string) *Pipe {
-	return NewPipe().PipeE(std.IfExists(path)).Wait()
+	p := NewPipe()
+	p.Pipeline.SetExitOnError(true)
+	return p.PipeE(std.IfExists(path)).Wait()
 }
 
 // ListFiles creates a pipeline with the file listing of path
@@ -317,9 +327,4 @@ func (p *Pipe) WithStdout(w io.Writer) *Pipe {
 	p.stdout = w
 	p.Pipeline = p.Pipeline.WithStdout(w)
 	return p
-}
-
-// NewReadAutoCloser returns a [ReadAutoCloser] wrapping the reader r.
-func NewReadAutoCloser(r io.Reader) pipeline.ReadAutoCloser {
-	return pipeline.NewReadAutoCloser(r)
 }

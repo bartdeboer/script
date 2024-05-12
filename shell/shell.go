@@ -48,8 +48,10 @@ func Exec(cmdLine string) pipeline.ProcessE {
 		cmd.Stdout = w
 		cmd.Stderr = e
 		if err = cmd.Start(); err != nil {
-			fmt.Fprintln(cmd.Stderr, err)
-			return err
+			return &pipeline.ExitError{
+				Code:    1,
+				Message: err.Error(),
+			}
 		}
 		return cmd.Wait()
 	}

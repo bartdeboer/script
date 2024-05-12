@@ -50,7 +50,7 @@ func ExampleListFiles() {
 	// testdata\multiple_files_with_subdirectory\dir
 }
 
-func ExamplePipeline_Basename() {
+func ExamplePipe_Basename() {
 	input := []string{
 		"",
 		"/",
@@ -71,7 +71,7 @@ func ExamplePipeline_Basename() {
 	// Program Files
 }
 
-func ExamplePipeline_Dirname() {
+func ExamplePipe_Dirname() {
 	input := []string{
 		"",
 		"/",

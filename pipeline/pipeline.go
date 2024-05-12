@@ -21,10 +21,12 @@ type ProcessE func(stdin io.Reader, stdout io.Writer, stderr io.Writer) error
 
 // Pipeline represents a pipeline object with an associated [ReadAutoCloser].
 type Pipeline struct {
-	// Reader is the underlying reader.
-	Reader         ReadAutoCloser
-	stdout, stderr io.Writer
-	exitStatus     int
+	Stdin       io.Reader
+	Stdout      io.Writer
+	Stderr      io.Writer
+	lastPipe    *Pipe
+	exitStatus  int
+	exitOnError bool
 
 	// because pipe stages are concurrent, protect 'err'
 	mu  *sync.Mutex
@@ -35,18 +37,25 @@ type Pipeline struct {
 // attach another reader to it).
 func NewPipeline() *Pipeline {
 	return &Pipeline{
-		Reader: ReadAutoCloser{},
-		mu:     new(sync.Mutex),
-		stdout: os.Stdout,
-		stderr: io.Discard,
+		Stdin:       os.Stdin,
+		Stdout:      os.Stdout,
+		Stderr:      os.Stderr,
+		lastPipe:    &Pipe{},
+		exitOnError: false,
+		mu:          new(sync.Mutex),
 	}
+}
+
+// Add adds one or more programs to the pipeline.
+func (p *Pipeline) Add(programs ...ProcessE) *Pipeline {
+	for _, program := range programs {
+		p.Pipe(program)
+	}
+	return p
 }
 
 // Bytes returns the contents of the pipe as a []byte, or an error.
 func (p *Pipeline) Bytes() ([]byte, error) {
-	// if p.Error() != nil {
-	// 	return nil, p.Error()
-	// }
 	data, err := io.ReadAll(p)
 	if err != nil {
 		p.SetError(err)
@@ -57,7 +66,7 @@ func (p *Pipeline) Bytes() ([]byte, error) {
 // Close closes the pipe's associated reader. This is a no-op if the reader is
 // not an [io.Closer].
 func (p *Pipeline) Close() error {
-	return p.Reader.Close()
+	return p.lastPipe.Close()
 }
 
 // Error returns any error present on the pipe, or nil otherwise.
@@ -80,6 +89,9 @@ func (p *Pipeline) ExitStatus() int {
 		return 0
 	}
 	err := p.Error()
+	if exitError, ok := err.(*ExitError); ok {
+		return exitError.ExitCode()
+	}
 	if exitError, ok := err.(*exec.ExitError); ok {
 		return exitError.ExitCode()
 	}
@@ -95,132 +107,7 @@ func (p *Pipeline) ExitStatus() int {
 	return status
 }
 
-// Pipe (Filter) adds a new program to the pipeline and ties the output stream [io.Reader]
-// of the previous program into the input stream [io.Reader] of the next program.
-// It then reads the output stream [io.Writer] of the next program to be used
-// for further processing within the pipeline.
-//
-// Pipe runs concurrently, so its goroutine will not exit until the pipe has
-// been fully read. Use [Pipe.Wait] to wait for all concurrent pipes to
-// complete.
-func (p *Pipeline) Pipe(program ProcessE) *Pipeline {
-	started := make(chan bool)
-	stdin := p.Reader
-	nextStdin, stdout := io.Pipe()
-	p = p.WithReader(nextStdin)
-	go func() {
-		defer close(started)
-		defer stdout.Close()
-		started <- true
-		err := program(stdin, stdout, p.stderr)
-		if err != nil {
-			p.SetError(err)
-		}
-	}()
-	<-started // Ensure go routines start in sequence
-	return p
-}
-
-// PipeE wraps programs in WithErr() and writes their error to stderr
-func (p *Pipeline) PipeE(program Process) *Pipeline {
-	return p.Pipe(WithErr(program))
-}
-
-// WithErr wraps the program and automatically writes errors to stderr
-func WithErr(program Process) ProcessE {
-	return func(stdin io.Reader, stdout io.Writer, stderr io.Writer) error {
-		err := program(stdin, stdout)
-		if err != nil {
-			fmt.Fprintf(stderr, "%v\n", err)
-		}
-		return err
-	}
-}
-
-// Scanner (FilterScan) sends the contents of the pipe to the function filter, a line at
-// a time, and produces the result. filter takes each line as a string and an
-// [io.Writer] to write its output to. See [Pipe.Filter] for concurrency
-// handling.
-func (p *Pipeline) Scanner(filter func(string, io.Writer)) *Pipeline {
-	return p.PipeE(Scanner(filter))
-}
-
-func Scanner(filter func(string, io.Writer)) Process {
-	return func(r io.Reader, w io.Writer) error {
-		scanner := newScanner(r)
-		for scanner.Scan() {
-			filter(scanner.Text(), w)
-		}
-		return scanner.Err()
-	}
-}
-
-// Read reads up to len(b) bytes from the pipe into b. It returns the number of
-// bytes read and any error encountered. At end of file, or on a nil pipe, Read
-// returns 0, [io.EOF].
-func (p *Pipeline) Read(b []byte) (int, error) {
-	// if p.Error() != nil {
-	// 	return 0, p.Error()
-	// }
-	if p == nil {
-		return 0, io.EOF
-	}
-	return p.Reader.Read(b)
-}
-
-// SetError sets the error err on the pipe.
-func (p *Pipeline) SetError(err error) *Pipeline {
-	if p.mu == nil { // uninitialised pipe
-		return p
-	}
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	p.err = err
-	return p
-}
-
-// Slice returns the pipe's contents as a slice of strings, one element per
-// line, or an error.
-//
-// An empty pipe will produce an empty slice. A pipe containing a single empty
-// line (that is, a single \n character) will produce a slice containing the
-// empty string as its single element.
-func (p *Pipeline) Slice() ([]string, error) {
-	result := []string{}
-	p.Scanner(func(line string, w io.Writer) {
-		result = append(result, line)
-	}).Wait()
-	return result, p.Error()
-}
-
-// Stdout copies the pipe's contents to its configured standard output (using
-// [Pipe.WithStdout]), or to [os.Stdout] otherwise, and returns the number of
-// bytes successfully written, together with any error.
-func (p *Pipeline) Stdout() (int, error) {
-	// if p.Error() != nil {
-	// 	return 0, p.Error()
-	// }
-	n64, err := io.Copy(p.stdout, p)
-	if err != nil {
-		return 0, err
-	}
-	n := int(n64)
-	if int64(n) != n64 {
-		return 0, fmt.Errorf("length %d overflows int", n64)
-	}
-	return n, p.Error()
-}
-
-// String returns the pipe's contents as a string, together with any error.
-func (p *Pipeline) String() (string, error) {
-	data, err := p.Bytes()
-	if err != nil {
-		p.SetError(err)
-	}
-	return string(data), p.Error()
-}
-
-// Int returns the pipe's contents as an int64, together with any error.
+// Int64 returns the pipe's contents as an int64, together with any error.
 func (p *Pipeline) Int64() (int64, error) {
 	data, err := p.Bytes()
 	if err != nil {
@@ -240,11 +127,117 @@ func (p *Pipeline) Int() (int, error) {
 	return int(result64), err
 }
 
+// IsClosed returns if the pipeline's last reader is closed
+func (p *Pipeline) IsClosed() bool {
+	if p.lastPipe == nil {
+		return true
+	}
+	return p.lastPipe.IsClosed()
+}
+
+// Pipe (Filter) adds a new program to the pipeline and ties the output stream [io.Reader]
+// of the previous program into the input stream [io.Reader] of the next program.
+// It then reads the output stream [io.Writer] of the next program to be used
+// for further processing within the pipeline.
+//
+// Pipe runs concurrently, so its goroutine will not exit until the pipe has
+// been fully read. Use [Pipe.Wait] to wait for all concurrent pipes to
+// complete.
+func (p *Pipeline) Pipe(program ProcessE) *Pipeline {
+	if p.exitOnError && p.Error() != nil {
+		return p
+	}
+	previousPipe := p.lastPipe
+	nextPipe := NewPipe()
+	p.lastPipe = nextPipe
+	go func() {
+		defer nextPipe.Close()
+		err := program(previousPipe, nextPipe, p.Stderr)
+		if err != nil {
+			p.SetError(err)
+		}
+	}()
+	return p
+}
+
+// PipeE wraps the program in WithErr() and writes errors received to stderr
+func (p *Pipeline) PipeE(program Process) *Pipeline {
+	return p.Pipe(WithErr(program))
+}
+
+// Read reads up to len(b) bytes from the pipe into b. It returns the number of
+// bytes read and any error encountered. At end of file, or on a nil pipe, Read
+// returns 0, [io.EOF].
+func (p *Pipeline) Read(b []byte) (int, error) {
+	if p == nil {
+		return 0, io.EOF
+	}
+	return p.lastPipe.Read(b)
+}
+
+// Run adds one or more programs to the pipeline and/or runs the pipeline
+// with all programs added to it.
+func (p *Pipeline) Run(programs ...ProcessE) (int64, error) {
+	p.Add(programs...)
+	written, err := io.Copy(p.Stdout, p)
+	if err != nil {
+		p.SetError(err)
+	}
+	return written, p.Error()
+}
+
+// Scanner (FilterScan) sends the contents of the pipe to the function filter, a line at
+// a time, and produces the result. filter takes each line as a string and an
+// [io.Writer] to write its output to. See [Pipe.Filter] for concurrency
+// handling.
+func (p *Pipeline) Scanner(filter func(string, io.Writer)) *Pipeline {
+	return p.PipeE(Scanner(filter))
+}
+
+// SetError sets the error err on the pipe.
+func (p *Pipeline) SetError(err error) *Pipeline {
+	if p.mu == nil { // uninitialised pipe
+		return p
+	}
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.err = err
+	return p
+}
+
+// SetExitOnError configures the pipeline to exit when an error has occured
+func (p *Pipeline) SetExitOnError(v bool) *Pipeline {
+	p.exitOnError = v
+	return p
+}
+
+// Slice returns the pipe's contents as a slice of strings, one element per
+// line, or an error.
+//
+// An empty pipe will produce an empty slice. A pipe containing a single empty
+// line (that is, a single \n character) will produce a slice containing the
+// empty string as its single element.
+func (p *Pipeline) Slice() ([]string, error) {
+	result := []string{}
+	p.Scanner(func(line string, w io.Writer) {
+		result = append(result, line)
+	}).Wait()
+	return result, p.Error()
+}
+
+// String returns the pipe's contents as a string, together with any error.
+func (p *Pipeline) String() (string, error) {
+	data, err := p.Bytes()
+	if err != nil {
+		p.SetError(err)
+	}
+	return string(data), p.Error()
+}
+
 // Wait reads the pipe to completion and discards the result. This is mostly
 // useful for waiting until concurrent filters have completed (see
 // [Pipe.Filter]).
 func (p *Pipeline) Wait() *Pipeline {
-	// Drain the pipeline to ensure all writers can finish writing
 	_, err := io.Copy(io.Discard, p)
 	if err != nil {
 		p.SetError(err)
@@ -261,7 +254,7 @@ func (p *Pipeline) WithError(err error) *Pipeline {
 // WithReader sets the pipe's input reader to r. Once r has been completely
 // read, it will be closed if necessary.
 func (p *Pipeline) WithReader(r io.Reader) *Pipeline {
-	p.Reader = NewReadAutoCloser(r)
+	p.lastPipe = NewReadOnlyPipe(r)
 	return p
 }
 
@@ -269,64 +262,131 @@ func (p *Pipeline) WithReader(r io.Reader) *Pipeline {
 // [Pipe.Exec] or [Pipe.ExecForEach] to the writer w, instead of going to the
 // pipe as it normally would.
 func (p *Pipeline) WithStderr(w io.Writer) *Pipeline {
-	p.stderr = w
+	p.Stderr = w
 	return p
 }
 
 // WithStdout sets the pipe's standard output to the writer w, instead of the
 // default [os.Stdout].
 func (p *Pipeline) WithStdout(w io.Writer) *Pipeline {
-	p.stdout = w
+	p.Stdout = w
 	return p
 }
 
-// ReadAutoCloser wraps an [io.ReadCloser] so that it will be automatically
-// closed once it has been fully read.
-type ReadAutoCloser struct {
-	r        io.ReadCloser
+// Pipe provides a pipe that streams out what was streamed into it.
+type Pipe struct {
+	mu       sync.Mutex
+	writer   io.WriteCloser
+	reader   io.Reader
 	isClosed bool
 }
 
-// NewReadAutoCloser returns a [ReadAutoCloser] wrapping the reader r.
-func NewReadAutoCloser(r io.Reader) ReadAutoCloser {
-	if _, ok := r.(io.Closer); !ok {
-		return ReadAutoCloser{io.NopCloser(r), false}
+// NewPipe initializes a new Pipe.
+func NewPipe() *Pipe {
+	pr, pw := io.Pipe()
+	return &Pipe{
+		writer: pw,
+		reader: pr,
 	}
-	rc, ok := r.(io.ReadCloser)
-	if !ok {
-		// This can never happen, but just in case it does...
-		panic("internal error: type assertion to io.ReadCloser failed")
-	}
-	return ReadAutoCloser{rc, false}
 }
 
-// Close closes ra's reader, returning any resulting error.
-func (ra ReadAutoCloser) Close() error {
-	if ra.r == nil {
-		return nil
+// NewReaderPipe initializes a read-only pipe with the provided stream.
+func NewReadOnlyPipe(reader io.Reader) *Pipe {
+	return &Pipe{
+		reader: reader,
 	}
-	ra.isClosed = true
-	return ra.r.Close()
 }
 
-// Read reads up to len(b) bytes from ra's reader into b. It returns the number
-// of bytes read and any error encountered. At end of file, Read returns 0,
-// [io.EOF]. If end-of-file is reached, the reader will be closed.
-func (ra ReadAutoCloser) Read(b []byte) (n int, err error) {
-	if ra.r == nil {
+// Close closes the pipe output, useful for signaling no more writes.
+func (p *Pipe) Close() error {
+	var err error
+	if p.writer != nil {
+		err = p.writer.Close()
+	} else if p.reader != nil {
+		if rc, ok := p.reader.(io.ReadCloser); ok {
+			err = rc.Close()
+		}
+	}
+	p.isClosed = true
+	return err
+}
+
+// IsClosed returns if the pipe is closed.
+func (p *Pipe) IsClosed() bool {
+	return p.isClosed
+}
+
+// Read implements the io.Reader interface.
+func (p *Pipe) Read(b []byte) (int, error) {
+	if p.reader == nil {
 		return 0, io.EOF
 	}
-	n, err = ra.r.Read(b)
-	if ra.isClosed {
-		err = io.EOF
-	} else if err == io.EOF {
-		ra.Close()
+	if p.isClosed {
+		return 0, io.EOF
+	}
+	n, err := p.reader.Read(b)
+	if err == io.EOF {
+		p.Close()
 	}
 	return n, err
+}
+
+// Write implements the io.Writer interface.
+func (p *Pipe) Write(b []byte) (int, error) {
+	if p.writer == nil {
+		return 0, fmt.Errorf("pipe not configured with a writer")
+	}
+	return p.writer.Write(b)
+}
+
+type ExitError struct {
+	Code    int
+	Message string
+}
+
+func (e *ExitError) Error() string {
+	if e.Message != "" {
+		return fmt.Sprintf("Process exited with status %d: %s", e.Code, e.Message)
+	}
+	return fmt.Sprintf("Process exited with status %d", e.Code)
+}
+
+func (e *ExitError) String() string {
+	return e.Error()
+}
+
+func (e *ExitError) Exited() bool {
+	return true
+}
+
+func (e *ExitError) ExitCode() int {
+	return e.Code
 }
 
 func newScanner(r io.Reader) *bufio.Scanner {
 	scanner := bufio.NewScanner(r)
 	scanner.Buffer(make([]byte, 4096), math.MaxInt)
 	return scanner
+}
+
+// Scanner is the scanner program that applies the specified filter line by line.
+func Scanner(filter func(string, io.Writer)) Process {
+	return func(r io.Reader, w io.Writer) error {
+		scanner := newScanner(r)
+		for scanner.Scan() {
+			filter(scanner.Text(), w)
+		}
+		return scanner.Err()
+	}
+}
+
+// WithErr wraps the program and automatically writes errors it received to stderr
+func WithErr(program Process) ProcessE {
+	return func(stdin io.Reader, stdout io.Writer, stderr io.Writer) error {
+		err := program(stdin, stdout)
+		if err != nil {
+			fmt.Fprintf(stderr, "%v\n", err)
+		}
+		return err
+	}
 }
