@@ -54,6 +54,14 @@ func (p *Pipeline) Add(programs ...ProcessE) *Pipeline {
 	return p
 }
 
+// Add adds one or more programs to the pipeline.
+func (p *Pipeline) AddE(programs ...Process) *Pipeline {
+	for _, program := range programs {
+		p.PipeE(program)
+	}
+	return p
+}
+
 // Bytes returns the contents of the pipe as a []byte, or an error.
 func (p *Pipeline) Bytes() ([]byte, error) {
 	data, err := io.ReadAll(p)
@@ -184,6 +192,12 @@ func (p *Pipeline) Run(programs ...ProcessE) (int64, error) {
 		p.SetError(err)
 	}
 	return written, p.Error()
+}
+
+// RunE does the same as Run but wraps the programs in WithErr
+func (p *Pipeline) RunE(programs ...Process) (int64, error) {
+	p.AddE(programs...)
+	return p.Run()
 }
 
 // Scanner (FilterScan) sends the contents of the pipe to the function filter, a line at
