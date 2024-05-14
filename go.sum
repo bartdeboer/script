@@ -1,5 +1,5 @@
-github.com/bartdeboer/pipeline v0.0.0-20240514151438-916a151d989a h1:NwLSXPAyDAZpf/DHZeCq6XrXhQNjRribg5rCycisqZc=
-github.com/bartdeboer/pipeline v0.0.0-20240514151438-916a151d989a/go.mod h1:B+1fLWh31IpywYxNDBXEPe7LQ+qH+abEZjgJanvIwA4=
+github.com/bartdeboer/pipeline v0.0.1 h1:12EdNSkiTSZaOumfLEOJFkMaQo1SurX43IKY4kMXulE=
+github.com/bartdeboer/pipeline v0.0.1/go.mod h1:B+1fLWh31IpywYxNDBXEPe7LQ+qH+abEZjgJanvIwA4=
 github.com/frankban/quicktest v1.14.5 h1:dfYrrRyLtiqT9GyKXgdh+k4inNeTvmGbuSgZ3lx3GhA=
 github.com/google/go-cmp v0.5.9 h1:O2Tfq5qg4qc4AmwVlvv0oLiVAGB7enBSJ2x2DqQFi38=
 github.com/google/go-cmp v0.5.9/go.mod h1:17dUlkBOakJ0+DkrSSNjCkIjxS6bF9zb3elmeNGIjoY=
