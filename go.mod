@@ -1,8 +1,11 @@
-module github.com/bitfield/script
+module github.com/bartdeboer/script
 
 go 1.18
 
+// replace github.com/bartdeboer/pipeline => ../pipeline
+
 require (
+	github.com/bartdeboer/pipeline v0.0.0-20240514151438-916a151d989a
 	github.com/google/go-cmp v0.5.9
 	github.com/itchyny/gojq v0.12.13
 	github.com/rogpeppe/go-internal v1.11.0

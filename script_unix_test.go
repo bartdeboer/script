@@ -5,7 +5,7 @@ package script_test
 import (
 	"testing"
 
-	"github.com/bitfield/script"
+	"github.com/bartdeboer/script"
 	"github.com/google/go-cmp/cmp"
 )
 
