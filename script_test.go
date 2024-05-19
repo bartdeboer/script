@@ -16,7 +16,6 @@ import (
 	"testing"
 	"testing/iotest"
 
-	"github.com/bartdeboer/pipeline"
 	"github.com/bartdeboer/script"
 	"github.com/google/go-cmp/cmp"
 	"github.com/rogpeppe/go-internal/testscript"
@@ -1190,11 +1189,8 @@ func TestExecRunsGoWithNoArgsAndGetsUsageMessagePlusErrorExitStatus2(t *testing.
 	// We can't make many cross-platform assumptions about what external
 	// commands will be available, but it seems logical that 'go' would be
 	// (though it may not be in the user's path)
-	buf := new(bytes.Buffer)
-	p := script.NewPipe().WithStderr(buf).Exec("go")
-	_, err := p.String()
-	data, _ := io.ReadAll(buf)
-	output := string(data)
+	p := script.Exec("go")
+	output, err := p.String()
 	if err == nil {
 		t.Fatal("want error when command returns a non-zero exit status")
 	}
@@ -1237,7 +1233,7 @@ func TestFileOutputsContentsOfSpecifiedFile(t *testing.T) {
 
 func TestFileErrorsOnNonexistentFile(t *testing.T) {
 	t.Parallel()
-	p := script.File("doesntexist").Wait() // Since File is now concurrently we need to wait for any error
+	p := script.File("doesntexist")
 	if p.Error() == nil {
 		t.Error("want error for non-existent file")
 	}
@@ -1281,7 +1277,7 @@ func TestFindFiles_RecursesIntoSubdirectories(t *testing.T) {
 
 func TestFindFiles_InNonexistentPathReturnsError(t *testing.T) {
 	t.Parallel()
-	p := script.FindFiles("nonexistent_path").Wait()
+	p := script.FindFiles("nonexistent_path")
 	if p.Error() == nil {
 		t.Fatal("want error for nonexistent path")
 	}
@@ -1295,7 +1291,6 @@ func TestIfExists_ProducesErrorPlusNoOutputForNonexistentFile(t *testing.T) {
 		t.Fatal("want error")
 	}
 	if want != got {
-		// With Unix pipelines echo would output regardless if the previous command failed
 		t.Error(cmp.Diff(want, got))
 	}
 }
@@ -1326,7 +1321,7 @@ func TestListFiles_OutputsDirectoryContentsGivenDirectoryPath(t *testing.T) {
 
 func TestListFiles_ErrorsOnNonexistentPath(t *testing.T) {
 	t.Parallel()
-	p := script.ListFiles("nonexistentpath").Wait()
+	p := script.ListFiles("nonexistentpath")
 	if p.Error() == nil {
 		t.Error("want error status on listing non-existent path, but got nil")
 	}
@@ -1363,7 +1358,7 @@ func TestReadAutoCloser_ReadsAllDataFromSourceAndClosesItAutomatically(t *testin
 	if err != nil {
 		t.Fatal(err)
 	}
-	acr := pipeline.NewReadOnlyPipe(input)
+	acr := script.NewReadAutoCloser(input)
 	got, err := io.ReadAll(acr)
 	if err != nil {
 		t.Fatal(err)
@@ -1674,10 +1669,6 @@ func TestWriteFile_WritesInputToFileCreatingItIfNecessary(t *testing.T) {
 type partialErrReader struct{}
 
 func (r partialErrReader) Read(p []byte) (int, error) {
-	if len(p) == 0 {
-		return 0, errors.New("buffer is zero-length")
-	}
-	p[0] = 'a' // Writing an actual byte
 	return 1, errors.New("oh no")
 }
 
@@ -1782,7 +1773,7 @@ func TestWithStdout_SetsSpecifiedWriterAsStdout(t *testing.T) {
 
 func TestErrorReturnsErrorSetByPreviousPipeStage(t *testing.T) {
 	t.Parallel()
-	p := script.File("testdata/nonexistent.txt").Wait()
+	p := script.File("testdata/nonexistent.txt")
 	if p.Error() == nil {
 		t.Error("want error status reading nonexistent file, but got nil")
 	}
@@ -1927,7 +1918,6 @@ func ExampleIfExists_true() {
 }
 
 func ExampleIfExists_false() {
-	// With Unix pipelines echo would output regardless if the previous command failed
 	script.IfExists("doesntexist").Echo("found it").Stdout()
 	// Output:
 	//

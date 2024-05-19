@@ -3,8 +3,8 @@ package gojq
 import (
 	"encoding/json"
 	"fmt"
-	"io"
 
+	"github.com/bartdeboer/pipeline"
 	"github.com/itchyny/gojq"
 )
 
@@ -14,14 +14,15 @@ import (
 // The exact dialect of JQ supported is that provided by
 // [github.com/itchyny/gojq], whose documentation explains the differences
 // between it and standard JQ.
-func JQ(query string) func(r io.Reader, w io.Writer) error {
-	return func(r io.Reader, w io.Writer) error {
+func JQ(query string) pipeline.Program {
+	p := pipeline.NewBaseProgram()
+	p.StartFn = func() error {
 		q, err := gojq.Parse(query)
 		if err != nil {
 			return err
 		}
 		var input interface{}
-		err = json.NewDecoder(r).Decode(&input)
+		err = json.NewDecoder(p.Stdin).Decode(&input)
 		if err != nil {
 			return err
 		}
@@ -38,7 +39,8 @@ func JQ(query string) func(r io.Reader, w io.Writer) error {
 			if err != nil {
 				return err
 			}
-			fmt.Fprintln(w, string(result))
+			fmt.Fprintln(p.Stdout, string(result))
 		}
 	}
+	return p
 }

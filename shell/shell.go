@@ -37,16 +37,17 @@ func newScanner(r io.Reader) *bufio.Scanner {
 // If the command writes to its standard error stream, this will also go to the
 // pipe, along with its standard output. However, the standard error text can
 // instead be redirected to a supplied writer, using [Pipe.WithStderr].
-func Exec(cmdLine string) pipeline.ProcessE {
-	return func(r io.Reader, w io.Writer, e io.Writer) error {
+func Exec(cmdLine string) pipeline.Program {
+	p := pipeline.NewBaseProgram()
+	p.StartFn = func() error {
 		args, err := shell.Fields(cmdLine, nil)
 		if err != nil {
 			return err
 		}
 		cmd := exec.Command(args[0], args[1:]...)
-		cmd.Stdin = r
-		cmd.Stdout = w
-		cmd.Stderr = e
+		cmd.Stdin = p.Stdin
+		cmd.Stdout = p.Stdout
+		cmd.Stderr = p.Stderr
 		if err = cmd.Start(); err != nil {
 			return &pipeline.ExitError{
 				Code:    1,
@@ -55,6 +56,7 @@ func Exec(cmdLine string) pipeline.ProcessE {
 		}
 		return cmd.Wait()
 	}
+	return p
 }
 
 // ExecForEach renders cmdLine as a Go template for each line of input, running
@@ -65,13 +67,14 @@ func Exec(cmdLine string) pipeline.ProcessE {
 // syntax. For example:
 //
 //	ListFiles("*").ExecForEach("touch {{.}}").Wait()
-func ExecForEach(cmdLine string) pipeline.ProcessE {
+func ExecForEach(cmdLine string) pipeline.Program {
+	p := pipeline.NewBaseProgram()
 	tpl, err := template.New("").Parse(cmdLine)
-	return func(r io.Reader, w io.Writer, e io.Writer) error {
+	p.StartFn = func() error {
 		if err != nil {
 			return err
 		}
-		scanner := newScanner(r)
+		scanner := newScanner(p.Stdin)
 		for scanner.Scan() {
 			cmdLine := new(strings.Builder)
 			err := tpl.Execute(cmdLine, scanner.Text())
@@ -83,8 +86,8 @@ func ExecForEach(cmdLine string) pipeline.ProcessE {
 				return err
 			}
 			cmd := exec.Command(args[0], args[1:]...)
-			cmd.Stdout = w
-			cmd.Stderr = e
+			cmd.Stdout = p.Stdout
+			cmd.Stderr = p.Stderr
 			err = cmd.Start()
 			if err != nil {
 				fmt.Fprintln(cmd.Stderr, err)
@@ -98,4 +101,5 @@ func ExecForEach(cmdLine string) pipeline.ProcessE {
 		}
 		return scanner.Err()
 	}
+	return p
 }

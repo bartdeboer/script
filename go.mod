@@ -2,7 +2,7 @@ module github.com/bartdeboer/script
 
 go 1.18
 
-// replace github.com/bartdeboer/pipeline => ../pipeline
+replace github.com/bartdeboer/pipeline => ../pipeline
 
 require (
 	github.com/bartdeboer/pipeline v0.0.1

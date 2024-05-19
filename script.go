@@ -22,16 +22,21 @@ type Pipe struct {
 
 func NewPipe() *Pipe {
 	p := &Pipe{
-		stdout:     os.Stdout,
 		httpClient: http.DefaultClient,
 	}
 	p.Pipeline = std.NewPipeline(p)
+	p.WithStdout(os.Stdout)
+	p.SetCombinedOutput(true)
 	return p
 }
 
 // For backwards compatibility
-func (p *Pipe) Filter(prog pipeline.Process) *Pipe {
-	return p.PipeE(prog)
+func (p *Pipe) Filter(filter func(r io.Reader, w io.Writer) error) *Pipe {
+	b := pipeline.NewBaseProgram()
+	b.StartFn = func() error {
+		return filter(b.Stdin, b.Stdout)
+	}
+	return p.Pipe(b)
 }
 
 // For backwards compatibility
@@ -77,7 +82,7 @@ func File(path string) *Pipe {
 
 // FindFiles creates a pipeline with the files found in dir
 func FindFiles(dir string) *Pipe {
-	return NewPipe().PipeE(std.FindFiles(dir))
+	return NewPipe().Pipe(std.FindFiles(dir))
 }
 
 // Do creates a pipeline with a GET HTTP request
@@ -88,12 +93,12 @@ func Get(url string) *Pipe {
 func IfExists(path string) *Pipe {
 	p := NewPipe()
 	p.Pipeline.SetExitOnError(true)
-	return p.PipeE(std.IfExists(path)).Wait()
+	return p.Pipe(std.IfExists(path)).Wait()
 }
 
 // ListFiles creates a pipeline with the file listing of path
 func ListFiles(path string) *Pipe {
-	return NewPipe().PipeE(std.ListFiles(path))
+	return NewPipe().Pipe(std.ListFiles(path))
 }
 
 // Do creates a pipeline with a POST HTTP request
@@ -113,7 +118,7 @@ func StdExec(name string, arg ...string) *Pipe {
 
 // Stdin creates a pipeline with stdin as input
 func Stdin() *Pipe {
-	return NewPipe().PipeE(std.Stdin())
+	return NewPipe().Pipe(std.Stdin())
 }
 
 // Program shortcuts:
@@ -121,17 +126,17 @@ func Stdin() *Pipe {
 // AppendFile reads the input and appends it to the file path, creating it if necessary,
 // and outputs the number of bytes successfully written
 func (p *Pipe) AppendFile(path string) (int64, error) {
-	return p.PipeE(std.AppendFile(path)).Int64()
+	return p.Pipe(std.AppendFile(path)).Int64()
 }
 
 // CountLines returns the number of lines of input, or an error.
 func (p *Pipe) CountLines() (int, error) {
-	return p.PipeE(std.CountLines()).Int()
+	return p.Pipe(std.CountLines()).Int()
 }
 
 // Get reads the input as the request body, sends the request and outputs the response
 func (p *Pipe) Do(req *http.Request) *Pipe {
-	return p.PipeE(std.Do(req, p.httpClient))
+	return p.Pipe(std.Do(req, p.httpClient))
 }
 
 // Exec executes cmdLine using sh/shell, using input as stdin and outputs the result
@@ -147,36 +152,36 @@ func (p *Pipe) ExecForEach(cmdLine string) *Pipe {
 
 // Get reads the input as the request body, sends a GET request and outputs the response
 func (p *Pipe) Get(url string) *Pipe {
-	return p.PipeE(std.Get(url, p.httpClient))
+	return p.Pipe(std.Get(url, p.httpClient))
 }
 
 // JQ reads the input (presumed to be JSON), executes the query and outputs the result
 func (p *Pipe) JQ(query string) *Pipe {
-	return p.PipeE(gojq.JQ(query))
+	return p.Pipe(gojq.JQ(query))
 }
 
 // Get reads the input as the request body, sends a POST request and outputs the response
 func (p *Pipe) Post(url string) *Pipe {
-	return p.PipeE(std.Post(url, p.httpClient))
+	return p.Pipe(std.Post(url, p.httpClient))
 }
 
 // SHA256Sum reads the input and outputs the hex-encoded SHA-256 hash
 func (p *Pipe) SHA256Sum() (string, error) {
-	return p.PipeE(std.SHA256Sum()).String()
+	return p.Pipe(std.SHA256Sum()).String()
 }
 
 // Tee reads the input and copies it to each of the supplied writers, like Unix tee(1)
 func (p *Pipe) Tee(writers ...io.Writer) *Pipe {
 	if len(writers) == 0 {
-		p.PipeE(std.Tee(p.stdout)) // If no writers Tee with Pipe.stdout
+		p.Pipe(std.Tee(p.stdout)) // If no writers Tee with Pipe.stdout
 	}
-	return p.PipeE(std.Tee(writers...))
+	return p.Pipe(std.Tee(writers...))
 }
 
 // WriteFile reads the input and writes it to the file path, truncating it if it exists,
 // and outputs the number of bytes successfully written
 func (p *Pipe) WriteFile(path string) (int64, error) {
-	return p.PipeE(std.WriteFile(path)).Int64()
+	return p.Pipe(std.WriteFile(path)).Int64()
 }
 
 // With* functions:
@@ -191,5 +196,16 @@ func (p *Pipe) WithHTTPClient(c *http.Client) *Pipe {
 func (p *Pipe) WithStdout(w io.Writer) *Pipe {
 	p.stdout = w
 	p.Pipeline.WithStdout(w)
+	p.Pipeline.WithStderr(w)
 	return p
+}
+
+func (p *Pipe) WithStderr(w io.Writer) *Pipe {
+	p.Pipeline.WithStderr(w)
+	p.Pipeline.SetCombinedOutput(false)
+	return p
+}
+
+func NewReadAutoCloser(r io.Reader) io.Reader {
+	return pipeline.NewReadOnlyPipe(r)
 }
