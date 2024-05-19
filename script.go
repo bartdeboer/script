@@ -9,8 +9,8 @@ import (
 
 	"github.com/bartdeboer/pipeline"
 	"github.com/bartdeboer/pipeline/std"
-	"github.com/bartdeboer/script.v2/gojq"
-	"github.com/bartdeboer/script.v2/shell"
+	"github.com/bartdeboer/script/v2/gojq"
+	"github.com/bartdeboer/script/v2/shell"
 )
 
 type Pipe struct {
