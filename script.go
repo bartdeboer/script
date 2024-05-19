@@ -93,7 +93,7 @@ func Get(url string) *Pipe {
 func IfExists(path string) *Pipe {
 	p := NewPipe()
 	p.Pipeline.SetExitOnError(true)
-	return p.Pipe(std.IfExists(path)).Wait()
+	return p.Pipe(std.IfExists(path))
 }
 
 // ListFiles creates a pipeline with the file listing of path
@@ -196,7 +196,6 @@ func (p *Pipe) WithHTTPClient(c *http.Client) *Pipe {
 func (p *Pipe) WithStdout(w io.Writer) *Pipe {
 	p.stdout = w
 	p.Pipeline.WithStdout(w)
-	p.Pipeline.WithStderr(w)
 	return p
 }
 
