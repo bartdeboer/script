@@ -5,7 +5,7 @@ go 1.18
 // replace github.com/bartdeboer/pipeline => ../pipeline
 
 require (
-	github.com/bartdeboer/pipeline v0.0.3
+	github.com/bartdeboer/pipeline v0.0.4
 	github.com/google/go-cmp v0.5.9
 	github.com/rogpeppe/go-internal v1.11.0
 )
