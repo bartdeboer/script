@@ -9,8 +9,6 @@ import (
 
 	"github.com/bartdeboer/pipeline"
 	"github.com/bartdeboer/pipeline/std"
-	"github.com/bartdeboer/script/v2/gojq"
-	"github.com/bartdeboer/script/v2/shell"
 )
 
 type Pipe struct {
@@ -71,8 +69,8 @@ func Echo(s string) *Pipe {
 }
 
 // Exec creates a pipeline with the specified command using sh/shell
-func Exec(cmdLine string) *Pipe {
-	return NewPipe().Exec(cmdLine)
+func Exec(name string, arg ...string) *Pipe {
+	return NewPipe().Exec(name, arg...)
 }
 
 // File creates a pipeline with the file contents
@@ -111,11 +109,6 @@ func Slice(s []string) *Pipe {
 	return Echo(strings.Join(s, "\n") + "\n")
 }
 
-// StdExec creates a pipeline with a standard system command
-func StdExec(name string, arg ...string) *Pipe {
-	return NewPipe().Pipeline.Exec(name, arg...)
-}
-
 // Stdin creates a pipeline with stdin as input
 func Stdin() *Pipe {
 	return NewPipe().Pipe(std.Stdin())
@@ -140,15 +133,15 @@ func (p *Pipe) Do(req *http.Request) *Pipe {
 }
 
 // Exec executes cmdLine using sh/shell, using input as stdin and outputs the result
-func (p *Pipe) Exec(cmdLine string) *Pipe {
-	return p.Pipe(shell.Exec(cmdLine))
-}
+// func (p *Pipe) Exec(cmdLine string) *Pipe {
+// 	return p.Pipe(shell.Exec(cmdLine))
+// }
 
 // ExecForEach renders cmdLine as a Go template for each line of input, running
 // the resulting command, and outputs the combined result of these commands in sequence
-func (p *Pipe) ExecForEach(cmdLine string) *Pipe {
-	return p.Pipe(shell.ExecForEach(cmdLine))
-}
+// func (p *Pipe) ExecForEach(cmdLine string) *Pipe {
+// 	return p.Pipe(shell.ExecForEach(cmdLine))
+// }
 
 // Get reads the input as the request body, sends a GET request and outputs the response
 func (p *Pipe) Get(url string) *Pipe {
@@ -156,9 +149,9 @@ func (p *Pipe) Get(url string) *Pipe {
 }
 
 // JQ reads the input (presumed to be JSON), executes the query and outputs the result
-func (p *Pipe) JQ(query string) *Pipe {
-	return p.Pipe(gojq.JQ(query))
-}
+// func (p *Pipe) JQ(query string) *Pipe {
+// 	return p.Pipe(gojq.JQ(query))
+// }
 
 // Get reads the input as the request body, sends a POST request and outputs the response
 func (p *Pipe) Post(url string) *Pipe {

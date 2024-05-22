@@ -16,7 +16,7 @@ import (
 	"testing"
 	"testing/iotest"
 
-	script "github.com/bartdeboer/script/v2"
+	"github.com/bartdeboer/script/v2"
 	"github.com/google/go-cmp/cmp"
 	"github.com/rogpeppe/go-internal/testscript"
 )
@@ -317,7 +317,7 @@ func TestEchoReplacesInputWithSuppliedStringWhenUsedAsFilter(t *testing.T) {
 
 func TestExecForEach_ErrorsOnInvalidTemplateSyntax(t *testing.T) {
 	t.Parallel()
-	p := script.Echo("a\nb\nc\n").ExecForEach("{{invalid template syntax}}")
+	p := script.Echo("a\nb\nc\n").ExecForEach(func(line string) (string, []string) { return "", nil })
 	p.Wait()
 	if p.Error() == nil {
 		t.Error("want error with invalid template syntax")
@@ -326,7 +326,7 @@ func TestExecForEach_ErrorsOnInvalidTemplateSyntax(t *testing.T) {
 
 func TestExecForEach_ErrorsOnUnbalancedQuotes(t *testing.T) {
 	t.Parallel()
-	p := script.Echo("a\nb\nc\n").ExecForEach("echo \"{{.}}")
+	p := script.Echo("a\nb\nc\n").ExecForEach(func(line string) (string, []string) { return "echo", []string{line} })
 	p.Wait()
 	if p.Error() == nil {
 		t.Error("want error with unbalanced quotes in command line")
@@ -336,7 +336,7 @@ func TestExecForEach_ErrorsOnUnbalancedQuotes(t *testing.T) {
 func TestExecForEach_SendsStderrOutputToPipeStderr(t *testing.T) {
 	t.Parallel()
 	buf := new(bytes.Buffer)
-	out, err := script.Echo("go").WithStderr(buf).ExecForEach("{{.}}").String()
+	out, err := script.Echo("go").WithStderr(buf).ExecForEach(func(line string) (string, []string) { return line, []string{} }).String()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -730,85 +730,85 @@ func TestJoinJoinsInputLinesIntoSpaceSeparatedString(t *testing.T) {
 	}
 }
 
-func TestJQWithDotQueryPrettyPrintsInput(t *testing.T) {
-	t.Parallel()
-	input := `{"timestamp": 1649264191, "iss_position": {"longitude": "52.8439", "latitude": "10.8107"}, "message": "success"}`
-	// Fields should be sorted by key, with whitespace removed
-	want := `{"iss_position":{"latitude":"10.8107","longitude":"52.8439"},"message":"success","timestamp":1649264191}` + "\n"
-	got, err := script.Echo(input).JQ(".").String()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if want != got {
-		t.Error(want, got)
-		t.Error(cmp.Diff(want, got))
-	}
-}
+// func TestJQWithDotQueryPrettyPrintsInput(t *testing.T) {
+// 	t.Parallel()
+// 	input := `{"timestamp": 1649264191, "iss_position": {"longitude": "52.8439", "latitude": "10.8107"}, "message": "success"}`
+// 	// Fields should be sorted by key, with whitespace removed
+// 	want := `{"iss_position":{"latitude":"10.8107","longitude":"52.8439"},"message":"success","timestamp":1649264191}` + "\n"
+// 	got, err := script.Echo(input).JQ(".").String()
+// 	if err != nil {
+// 		t.Fatal(err)
+// 	}
+// 	if want != got {
+// 		t.Error(want, got)
+// 		t.Error(cmp.Diff(want, got))
+// 	}
+// }
 
-func TestJQWithFieldQueryProducesSelectedField(t *testing.T) {
-	t.Parallel()
-	input := `{"timestamp": 1649264191, "iss_position": {"longitude": "52.8439", "latitude": "10.8107"}, "message": "success"}`
-	want := `{"latitude":"10.8107","longitude":"52.8439"}` + "\n"
-	got, err := script.Echo(input).JQ(".iss_position").String()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if want != got {
-		t.Error(want, got)
-		t.Error(cmp.Diff(want, got))
-	}
-}
+// func TestJQWithFieldQueryProducesSelectedField(t *testing.T) {
+// 	t.Parallel()
+// 	input := `{"timestamp": 1649264191, "iss_position": {"longitude": "52.8439", "latitude": "10.8107"}, "message": "success"}`
+// 	want := `{"latitude":"10.8107","longitude":"52.8439"}` + "\n"
+// 	got, err := script.Echo(input).JQ(".iss_position").String()
+// 	if err != nil {
+// 		t.Fatal(err)
+// 	}
+// 	if want != got {
+// 		t.Error(want, got)
+// 		t.Error(cmp.Diff(want, got))
+// 	}
+// }
 
-func TestJQWithArrayQueryProducesRequiredArray(t *testing.T) {
-	t.Parallel()
-	input := `{"timestamp": 1649264191, "iss_position": {"longitude": "52.8439", "latitude": "10.8107"}, "message": "success"}`
-	want := `["10.8107","52.8439"]` + "\n"
-	got, err := script.Echo(input).JQ("[.iss_position.latitude, .iss_position.longitude]").String()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if want != got {
-		t.Error(want, got)
-		t.Error(cmp.Diff(want, got))
-	}
-}
+// func TestJQWithArrayQueryProducesRequiredArray(t *testing.T) {
+// 	t.Parallel()
+// 	input := `{"timestamp": 1649264191, "iss_position": {"longitude": "52.8439", "latitude": "10.8107"}, "message": "success"}`
+// 	want := `["10.8107","52.8439"]` + "\n"
+// 	got, err := script.Echo(input).JQ("[.iss_position.latitude, .iss_position.longitude]").String()
+// 	if err != nil {
+// 		t.Fatal(err)
+// 	}
+// 	if want != got {
+// 		t.Error(want, got)
+// 		t.Error(cmp.Diff(want, got))
+// 	}
+// }
 
-func TestJQWithArrayInputAndElementQueryProducesSelectedElement(t *testing.T) {
-	t.Parallel()
-	input := `[1, 2, 3]`
-	want := "1\n"
-	got, err := script.Echo(input).JQ(".[0]").String()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if want != got {
-		t.Error(want, got)
-		t.Error(cmp.Diff(want, got))
-	}
-}
+// func TestJQWithArrayInputAndElementQueryProducesSelectedElement(t *testing.T) {
+// 	t.Parallel()
+// 	input := `[1, 2, 3]`
+// 	want := "1\n"
+// 	got, err := script.Echo(input).JQ(".[0]").String()
+// 	if err != nil {
+// 		t.Fatal(err)
+// 	}
+// 	if want != got {
+// 		t.Error(want, got)
+// 		t.Error(cmp.Diff(want, got))
+// 	}
+// }
 
-func TestJQHandlesGithubJSONWithRealWorldExampleQuery(t *testing.T) {
-	t.Parallel()
-	want := `{"message":"restore sample log data (fixes #102)","name":"John Arundel"}` + "\n"
-	got, err := script.File("testdata/commits.json").
-		JQ(".[0] | {message: .commit.message, name: .commit.committer.name}").String()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if want != got {
-		t.Error(want, got)
-		t.Error(cmp.Diff(want, got))
-	}
-}
+// func TestJQHandlesGithubJSONWithRealWorldExampleQuery(t *testing.T) {
+// 	t.Parallel()
+// 	want := `{"message":"restore sample log data (fixes #102)","name":"John Arundel"}` + "\n"
+// 	got, err := script.File("testdata/commits.json").
+// 		JQ(".[0] | {message: .commit.message, name: .commit.committer.name}").String()
+// 	if err != nil {
+// 		t.Fatal(err)
+// 	}
+// 	if want != got {
+// 		t.Error(want, got)
+// 		t.Error(cmp.Diff(want, got))
+// 	}
+// }
 
-func TestJQErrorsWithInvalidQuery(t *testing.T) {
-	t.Parallel()
-	input := `[1, 2, 3]`
-	_, err := script.Echo(input).JQ(".foo & .bar").String()
-	if err == nil {
-		t.Error("want error from invalid JQ query, got nil")
-	}
-}
+// func TestJQErrorsWithInvalidQuery(t *testing.T) {
+// 	t.Parallel()
+// 	input := `[1, 2, 3]`
+// 	_, err := script.Echo(input).JQ(".foo & .bar").String()
+// 	if err == nil {
+// 		t.Error("want error from invalid JQ query, got nil")
+// 	}
+// }
 
 func TestLastDropsAllButLastNLinesOfInput(t *testing.T) {
 	t.Parallel()
@@ -2110,14 +2110,14 @@ func ExamplePipe_Join() {
 	// hello world
 }
 
-func ExamplePipe_JQ() {
-	kernel := "Darwin"
-	arch := "x86_64"
-	query := fmt.Sprintf(".assets[] | select(.name | endswith(\"%s_%s.tar.gz\")).browser_download_url", kernel, arch)
-	script.File("testdata/releases.json").JQ(query).Stdout()
-	// Output:
-	// "https://github.com/mbarley333/blackjack/releases/download/v0.3.3/blackjack_0.3.3_Darwin_x86_64.tar.gz"
-}
+// func ExamplePipe_JQ() {
+// 	kernel := "Darwin"
+// 	arch := "x86_64"
+// 	query := fmt.Sprintf(".assets[] | select(.name | endswith(\"%s_%s.tar.gz\")).browser_download_url", kernel, arch)
+// 	script.File("testdata/releases.json").JQ(query).Stdout()
+// 	// Output:
+// 	// "https://github.com/mbarley333/blackjack/releases/download/v0.3.3/blackjack_0.3.3_Darwin_x86_64.tar.gz"
+// }
 
 func ExamplePipe_Last() {
 	script.Echo("a\nb\nc\n").Last(2).Stdout()

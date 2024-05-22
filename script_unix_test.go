@@ -11,7 +11,7 @@ import (
 
 func TestExecForEach_HandlesLongLines(t *testing.T) {
 	t.Parallel()
-	got, err := script.Echo(longLine).ExecForEach(`echo "{{.}}"`).String()
+	got, err := script.Echo(longLine).ExecForEach(func(line string) (string, []string) { return "echo", []string{line} }).String()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -38,7 +38,7 @@ func TestExecRunsShWithEchoHelloAndGetsOutputHello(t *testing.T) {
 
 func TestExecRunsShWithinShWithEchoInceptionAndGetsOutputInception(t *testing.T) {
 	t.Parallel()
-	p := script.Exec("sh -c 'sh -c \"echo inception\"'")
+	p := script.Exec("sh", "-c", "sh -c \"echo inception\"")
 	if p.Error() != nil {
 		t.Fatal(p.Error())
 	}
@@ -54,7 +54,7 @@ func TestExecRunsShWithinShWithEchoInceptionAndGetsOutputInception(t *testing.T)
 
 func TestExecErrorsRunningShellCommandWithUnterminatedStringArgument(t *testing.T) {
 	t.Parallel()
-	p := script.Exec("sh -c 'echo oh no")
+	p := script.Exec("sh", "-c", "'echo oh no")
 	p.Wait()
 	if p.Error() == nil {
 		t.Error("want error running 'sh' command line containing unterminated string")
@@ -63,7 +63,7 @@ func TestExecErrorsRunningShellCommandWithUnterminatedStringArgument(t *testing.
 
 func TestExecForEach_RunsEchoWithABCAndGetsOutputABC(t *testing.T) {
 	t.Parallel()
-	p := script.Echo("a\nb\nc\n").ExecForEach("echo {{.}}")
+	p := script.Echo("a\nb\nc\n").ExecForEach(func(line string) (string, []string) { return "echo", []string{line} })
 	if p.Error() != nil {
 		t.Fatal(p.Error())
 	}
@@ -79,7 +79,12 @@ func TestExecForEach_RunsEchoWithABCAndGetsOutputABC(t *testing.T) {
 
 func TestExecForEach_CorrectlyEvaluatesTemplateContainingIfStatement(t *testing.T) {
 	t.Parallel()
-	p := script.Echo("a").ExecForEach("echo {{if .}}it worked!{{end}}")
+	p := script.Echo("a").ExecForEach(func(line string) (string, []string) {
+		if line != "" {
+			return "echo", []string{"it worked!\n"}
+		}
+		return "echo", nil
+	})
 	if p.Error() != nil {
 		t.Fatal(p.Error())
 	}
@@ -193,7 +198,7 @@ func ExamplePipe_Exec() {
 }
 
 func ExamplePipe_ExecForEach() {
-	script.Echo("a\nb\nc\n").ExecForEach("echo {{.}}").Stdout()
+	script.Echo("a\nb\nc\n").ExecForEach(func(line string) (string, []string) { return "echo", []string{line} }).Stdout()
 	// Output:
 	// a
 	// b
